@@ -1,6 +1,9 @@
 import os, re, json, urllib.request, urllib.parse
 
-URL = "https://www.pockettactics.com/mobile-legends/redeem-codes"
+URLS = [
+    "https://www.pockettactics.com/mobile-legends/redeem-codes",
+    "https://www.pocketgamer.com/mobile-legends-bang-bang/redeem-codes/",
+]
 TOKEN = os.environ["TG_TOKEN"]
 CHAT = os.environ["TG_CHAT_ID"]
 SEEN = "seen.json"
@@ -9,21 +12,29 @@ def send(text):
     data = urllib.parse.urlencode({"chat_id": CHAT, "text": text}).encode()
     urllib.request.urlopen(f"https://api.telegram.org/bot{TOKEN}/sendMessage", data)
 
-req = urllib.request.Request(URL, headers={"User-Agent": "Mozilla/5.0"})
-html = urllib.request.urlopen(req, timeout=30).read().decode("utf-8", "ignore")
-html = re.sub(r"(?s)<(script|style).*?</\1>", " ", html)
-text = re.sub(r"<[^>]+>", " ", html)
+def fetch(url):
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    html = urllib.request.urlopen(req, timeout=30).read().decode("utf-8", "ignore")
+    html = re.sub(r"(?s)<(script|style).*?</\1>", " ", html)
+    text = re.sub(r"<[^>]+>", " ", html)
+    return {c for c in re.findall(r"\b[A-Z0-9]{6,16}\b", text)
+            if re.search(r"\d", c) and re.search(r"[A-Z]", c)}
 
-found = {c for c in re.findall(r"\b[A-Z0-9]{6,16}\b", text)
-         if re.search(r"\d", c) and re.search(r"[A-Z]", c)}
+found = {}
+for url in URLS:
+    try:
+        for c in fetch(url):
+            found.setdefault(c, url)
+    except Exception as e:
+        print("failed:", url, e)
 
 if os.path.exists(SEEN):
     old = set(json.load(open(SEEN)))
-    new = found - old
+    new = {c: u for c, u in found.items() if c not in old}
     if new:
-        send("🎁 كود جديد في MLBB:\n" + "\n".join(sorted(new)) + "\n" + URL)
+        send("🎁 كود جديد في MLBB:\n\n" + "\n\n".join(f"{c}\n{new[c]}" for c in sorted(new)))
 else:
     old = set()
     send("✅ بدأت مراقبة أكواد MLBB")
 
-json.dump(sorted(found | old), open(SEEN, "w"))
+json.dump(sorted(set(found) | old), open(SEEN, "w"))
